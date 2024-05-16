@@ -1,0 +1,32 @@
+{
+    "program": "main.py",
+    "name": "sequence-tuning",
+    "method": "bayes",
+    "metric": {
+          "name": "val_accuracy",
+          "goal": "maximize"
+    },
+    "parameters": {
+        "input_embedding_size": {
+            "values": [16, 32, 64, 256]
+        },
+        "num_encoder_layers": {
+            "values": [1, 2, 3]
+        },
+        "num_decoder_layers": {
+            "values": [1, 2, 3]
+        },
+        "hidden_layer_size": {
+            "values": [16, 32, 64, 256]
+        },
+        "cell_type": {
+            "values": ["RNN", "GRU", "LSTM"]
+        },
+        "bidirectional": {
+            "values": ["Yes", "No"]
+        },
+        "dropout": {
+            "values": [0.2, 0.4, 0.6]
+        }
+    }
+}

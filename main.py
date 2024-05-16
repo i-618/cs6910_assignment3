@@ -1,18 +1,52 @@
-import math
-import torchmetrics
+import argparse
+import wandb
 from langscript import Script, load_dataset_csv, get_dataloader
 from sequenceModel import AttnDecoderRNN, Encoder, Decoder, train
 import torch
 import os
 
 
+
+# wandb.login(key = 'WANDB_API_KEY', verify = True)
+
+run = wandb.init(
+      # Set the project where this run will be logged
+      project="CS6910-Assignment-3"
+      )
+
+parser = argparse.ArgumentParser(description='Sequential Network for Transliteration')
+
+parser.add_argument('-wp', '--wandb_project', type=str, default='CS6910-Assignment-3', help='Project name used to track experiments in Weights & Biases dashboard')
+parser.add_argument('-sid', '--wandb_sweepid', type=str, default=None, help='Wandb Sweep Id to log in sweep runs the Weights & Biases dashboard.')
+parser.add_argument('-d', '--dataset', type=str, default='aksharantar_sampled', choices=["aksharantar_sampled"], help='Dataset choices: ["aksharantar_sampled"]')
+parser.add_argument('-l', '--language', type=str, default='kan', help='Language choices: ["kan", "mal", "hin"]')
+parser.add_argument('-e', '--epochs', type=int, default=10, help='Number of epochs to train neural network.')
+parser.add_argument('-b', '--batch_size', type=int, default=32, help='Batch size used to train neural network.')
+parser.add_argument('-hs', '--hidden_size', type=int, default=128, help='Hidden size of the Encoder and Decoder.')
+parser.add_argument('-nel', '--num_encoder_layers', type=int, default=2, help='Number of layers in the Encoder.')
+parser.add_argument('-edp', '--encoder_dropout_p', type=float, default=0.1, help='Dropout probability in the Encoder.')
+parser.add_argument('-ndl', '--num_decoder_layers', type=int, default=2, help='Number of layers in the Decoder.')
+parser.add_argument('-ddp', '--decoder_dropout_p', type=float, default=0.1, help='Dropout probability in the Decoder.')
+parser.add_argument('-bi', '--bidirectional', type=bool, default=False, help='Bidirectional Encoder.')
+parser.add_argument('-ct', '--cell_type', type=str, default='LSTM', help='Cell type used in Encoder and Decoder. Choices: ["LSTM", "GRU", "RNN"]')
+parser.add_argument('-do', '--dropout', type=float, default=0.1, help='Dropout probability in the Encoder and Decoder.')
+
+
+args = parser.parse_args()
+
+
+
+
+
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(device)
+print('device', device)
+
 
 # Load the dataset contraining words transliterated from one scipt to anothe
 
-dataset_name = "aksharantar_sampled"
-language = "kan"
+dataset_name = args.dataset
+language = args.language
 list_files = os.listdir(f'{dataset_name}/{language}')
 path = f'{dataset_name}/{language}'
 
@@ -38,15 +72,48 @@ transliter_pairs_test = list(zip(X_test, y_test))
 transliter_pairs_train = list(zip(X_train, y_train))
 transliter_pairs_val = list(zip(X_val, y_val))
 
-dataloader_train = get_dataloader(transliter_pairs_train, latin_script, local_script, MAX_LENGTH, device,batch_size=32)
-dataloader_test = get_dataloader(transliter_pairs_test, latin_script, local_script, MAX_LENGTH, device, batch_size=32)
-dataloader_val = get_dataloader(transliter_pairs_val, latin_script, local_script, MAX_LENGTH, device, batch_size=32)
+batch_size=args.batch_size
+dataloader_train = get_dataloader(transliter_pairs_train, latin_script, local_script, MAX_LENGTH, device,batch_size=batch_size)
+dataloader_test = get_dataloader(transliter_pairs_test, latin_script, local_script, MAX_LENGTH, device, batch_size=batch_size)
+dataloader_val = get_dataloader(transliter_pairs_val, latin_script, local_script, MAX_LENGTH, device, batch_size=batch_size)
 
-hidden_size = 128
-batch_size=32
-encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, num_layers=5,dropout_p=0).to(device)
-decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, num_decoder_layers=2,device=device).to(device)
+epochs = args.epochs
+hidden_size = args.hidden_size
+num_encoder_layers = args.num_encoder_layers
+encoder_dropout_p = args.encoder_dropout_p
+num_decoder_layers = args.num_decoder_layers
+decoder_dropout_p = args.decoder_dropout_p
+rnn_type = args.cell_type
+bidirectional = args.bidirectional
+RNN = getattr(torch.nn, rnn_type)
+encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
+decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, bidirectional=bidirectional, num_decoder_layers=num_decoder_layers, device=device).to(device)
+attn_decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, dropout_p=decoder_dropout_p, device=device).to(device)
 
-attn_decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, device=device).to(device)
+if not args.wandb_sweepid is None:
+    # For sweep runs, where config is set by wandb.ai
+    def hyper_config_run(config=None):
+        with wandb.init(config=config, reinit=True) as run:  # type: ignore
+             # If called by wandb.agent, as below,
+            # this config will be set by Sweep Controller
+            config = wandb.config
+            
+            run_name = str(config).replace("': '", ' ').replace("'", '')
+            print(run_name)
+            run.name = run_name
+            
+            hidden_size = config.hidden_layer_size
+            num_encoder_layers = config.num_encoder_layers
+            encoder_dropout_p = config.dropout
+            num_decoder_layers = config.num_decoder_layers
+            decoder_dropout_p = config.dropout
+            bidirectional = True if config.bidirectional == 'Yes' else False
+            encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
+            decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, bidirectional=bidirectional, num_decoder_layers=num_decoder_layers, device=device).to(device)
+            attn_decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, dropout_p=decoder_dropout_p, device=device).to(device)
+            loss = train(dataloader_train, encoder, decoder, epochs, print_every=1, device=device, val_dataloader=dataloader_val)
+        
+    wandb.agent(args.wandb_sweepid, project=args.wandb_project, function=hyper_config_run)
+else:
+    loss = train(dataloader_train, encoder, decoder, epochs, print_every=1, device=device, val_dataloader=dataloader_val)
 
-loss = train(dataloader_train, encoder, decoder, 25, print_every=1, plot_every=1, device=device, val_dataloader=dataloader_val)
