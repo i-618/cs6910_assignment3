@@ -52,12 +52,14 @@ list_files = os.listdir(f'{dataset_name}/{language}')
 path = f'{dataset_name}/{language}'
 
 
+# Load the there data files 
+X_test, y_test = load_dataset_csv(f'{path}/{language}_test.csv')
+X_train, y_train = load_dataset_csv(f'{path}/{language}_train.csv')
+X_val, y_val = load_dataset_csv(f'{path}/{language}_val.csv')
 
-X_test, y_test = load_dataset_csv(f'{path}/{list_files[0]}')
-X_train, y_train = load_dataset_csv(f'{path}/{list_files[1]}')
-X_val, y_val = load_dataset_csv(f'{path}/{list_files[2]}')
-
+# MAX Length decides how many times the decoder will run and generate text, this is also used for padding
 MAX_LENGTH = max([len(x) for x in X_train] + [len(y) for y in y_train])
+
 
 print('MAX_LENGTH', MAX_LENGTH)
 # Create the script object
@@ -131,6 +133,7 @@ if not args.wandb_sweepid is None:
     wandb.agent(args.wandb_sweepid, project=args.wandb_project, function=hyper_config_run)
 else:
     if attention:
+        # Bahadanau Attention was not working with multiple layers
         num_encoder_layers,num_decoder_layers  = 1, 1
         bidirectional = False
         dropout_encoder = encoder_dropout_p
