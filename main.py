@@ -23,14 +23,15 @@ parser.add_argument('-l', '--language', type=str, default='kan', help='Language 
 parser.add_argument('-e', '--epochs', type=int, default=10, help='Number of epochs to train neural network.')
 parser.add_argument('-b', '--batch_size', type=int, default=32, help='Batch size used to train neural network.')
 parser.add_argument('-hs', '--hidden_size', type=int, default=128, help='Hidden size of the Encoder and Decoder.')
+parser.add_argument('-ie', '--input_embedding_size', type=int, default=128, help='Input embedding size of the Encoder.')
 parser.add_argument('-nel', '--num_encoder_layers', type=int, default=2, help='Number of layers in the Encoder.')
 parser.add_argument('-edp', '--encoder_dropout_p', type=float, default=0.1, help='Dropout probability in the Encoder.')
 parser.add_argument('-ndl', '--num_decoder_layers', type=int, default=2, help='Number of layers in the Decoder.')
 parser.add_argument('-ddp', '--decoder_dropout_p', type=float, default=0.1, help='Dropout probability in the Decoder.')
 parser.add_argument('-bi', '--bidirectional', type=bool, default=False, help='Bidirectional Encoder.')
-parser.add_argument('-ct', '--cell_type', type=str, default='LSTM', help='Cell type used in Encoder and Decoder. Choices: ["LSTM", "GRU", "RNN"]')
+parser.add_argument('-ct', '--cell_type', type=str, default='RNN', help='Cell type used in Encoder and Decoder. Choices: ["GRU", "RNN"]')
 parser.add_argument('-do', '--dropout', type=float, default=0.1, help='Dropout probability in the Encoder and Decoder.')
-
+parser.add_argument('-attn', '--attention', type=bool, default=False, help='Use Attention in Decoder.')
 
 args = parser.parse_args()
 
@@ -86,9 +87,9 @@ decoder_dropout_p = args.decoder_dropout_p
 rnn_type = args.cell_type
 bidirectional = args.bidirectional
 RNN = getattr(torch.nn, rnn_type)
-encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
-decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, bidirectional=bidirectional, num_decoder_layers=num_decoder_layers, device=device).to(device)
-attn_decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, dropout_p=decoder_dropout_p, device=device).to(device)
+inp_embed_size = args.input_embedding_size
+attention = args.attention
+print('attention', attention)
 
 if not args.wandb_sweepid is None:
     # For sweep runs, where config is set by wandb.ai
@@ -101,19 +102,45 @@ if not args.wandb_sweepid is None:
             run_name = str(config).replace("': '", ' ').replace("'", '')
             print(run_name)
             run.name = run_name
-            
-            hidden_size = config.hidden_layer_size
-            num_encoder_layers = config.num_encoder_layers
-            encoder_dropout_p = config.dropout
-            num_decoder_layers = config.num_decoder_layers
-            decoder_dropout_p = config.dropout
-            bidirectional = True if config.bidirectional == 'Yes' else False
-            encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
-            decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, bidirectional=bidirectional, num_decoder_layers=num_decoder_layers, device=device).to(device)
-            attn_decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, dropout_p=decoder_dropout_p, device=device).to(device)
-            loss = train(dataloader_train, encoder, decoder, epochs, print_every=1, device=device, val_dataloader=dataloader_val)
+            if attention:
+                num_encoder_layers,num_decoder_layers  = 1, 1
+                bidirectional = False
+                input_embedding_size = config.input_embedding_size
+                hidden_size = config.hidden_layer_size
+                dropout_encoder = config.dropout_encoder
+                dropout_decoder = config.dropout_decoder
+                RNN_ENC = getattr(torch.nn, config.cell_type_encoder)
+                RNN_DEC = getattr(torch.nn, config.cell_type_decoder)
+                encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, RNN=RNN_ENC,inp_emmbed_size=input_embedding_size, num_layers=num_encoder_layers, bidirectional=False, dropout_p=dropout_encoder).to(device)
+                decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, max_length=MAX_LENGTH, RNN=RNN_DEC, dropout_p=dropout_decoder, device=device).to(device)
+
+            else:
+                
+                hidden_size = config.hidden_layer_size
+                num_encoder_layers = config.num_encoder_layers
+                encoder_dropout_p = config.dropout
+                num_decoder_layers = config.num_decoder_layers
+                decoder_dropout_p = config.dropout
+                bidirectional = True if config.bidirectional == 'Yes' else False
+                inp_embed_size = config.input_embedding_size
+                RNN = getattr(torch.nn, config.cell_type)
+                encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, RNN=RNN, inp_emmbed_size=inp_embed_size,num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
+                decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, RNN=RNN, output_size=local_script.vocab_size, dropout_p=decoder_dropout_p, bidirectional=bidirectional, num_decoder_layers=num_decoder_layers, device=device).to(device)
+            train(dataloader_train, encoder, decoder, epochs, print_every=1, device=device, val_dataloader=dataloader_val)
         
     wandb.agent(args.wandb_sweepid, project=args.wandb_project, function=hyper_config_run)
 else:
+    if attention:
+        num_encoder_layers,num_decoder_layers  = 1, 1
+        bidirectional = False
+        dropout_encoder = encoder_dropout_p
+        dropout_decoder = decoder_dropout_p
+        RNN_ENC = RNN
+        RNN_DEC = getattr(torch.nn, 'GRU')
+        encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, RNN=RNN_ENC,inp_emmbed_size=inp_embed_size, num_layers=num_encoder_layers, bidirectional=False, dropout_p=dropout_encoder).to(device)
+        decoder = AttnDecoderRNN(hidden_size=hidden_size, output_size=local_script.vocab_size, max_length=MAX_LENGTH, RNN=RNN_DEC, dropout_p=dropout_decoder, device=device).to(device)
+    else:
+        encoder = Encoder(input_size=latin_script.vocab_size, hidden_size=hidden_size, inp_emmbed_size=inp_embed_size, num_layers=num_encoder_layers, bidirectional=bidirectional, dropout_p=encoder_dropout_p).to(device)
+        decoder = Decoder(hidden_size=hidden_size, max_length=MAX_LENGTH, output_size=local_script.vocab_size, bidirectional=bidirectional, dropout_p=decoder_dropout_p, num_decoder_layers=num_decoder_layers, device=device).to(device)
     loss = train(dataloader_train, encoder, decoder, epochs, print_every=1, device=device, val_dataloader=dataloader_val)
 

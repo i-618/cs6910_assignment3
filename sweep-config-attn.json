@@ -1,6 +1,6 @@
 {
     "program": "main.py",
-    "name": "sequence-parameter-tuning",
+    "name": "sequence-tuning-attention",
     "method": "bayes",
     "metric": {
           "name": "val_accuracy",
@@ -10,22 +10,19 @@
         "input_embedding_size": {
             "values": [16, 32, 64, 256]
         },
-        "num_encoder_layers": {
-            "values": [1, 2, 3]
-        },
-        "num_decoder_layers": {
-            "values": [1, 2, 3]
-        },
         "hidden_layer_size": {
             "values": [16, 32, 64, 256]
         },
-        "cell_type": {
+        "cell_type_encoder": {
+            "values": ["RNN", "GRU", "LSTM"]
+        },
+        "cell_type_decoder": {
             "values": ["RNN", "GRU"]
         },
-        "bidirectional": {
-            "values": ["Yes", "No"]
+        "dropout_encoder": {
+            "values": [0.2, 0.4, 0.6]
         },
-        "dropout": {
+        "dropout_decoder": {
             "values": [0.2, 0.4, 0.6]
         }
     }

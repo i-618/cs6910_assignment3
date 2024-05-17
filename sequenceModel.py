@@ -54,7 +54,7 @@ class Decoder(torch.nn.Module):
 
     """
 
-    def __init__(self, hidden_size, output_size, max_length=32, num_decoder_layers=3, RNN=torch.nn.GRU, dropout_p=0.1, bidirectional=False,  device=torch.device('cpu')):
+    def __init__(self, hidden_size, output_size, max_length=32, num_decoder_layers=3, RNN=torch.nn.LSTM, dropout_p=0.1, bidirectional=False,  device=torch.device('cpu')):
         super(Decoder, self).__init__()
         self.output_size = output_size
         self.num_decoder_layers = num_decoder_layers
@@ -115,12 +115,12 @@ class BahdanauAttention(torch.nn.Module):
         return context, weights
 
 class AttnDecoderRNN(torch.nn.Module):
-    def __init__(self, hidden_size, output_size, max_length=29, dropout_p=0.1, num_decoder_layers=3, device=torch.device('cpu')):
+    def __init__(self, hidden_size, output_size, max_length=29, RNN=torch.nn.GRU, dropout_p=0.1, device=torch.device('cpu')):
         super(AttnDecoderRNN, self).__init__()
         self.output_size = output_size
         self.embedding = torch.nn.Embedding(output_size, hidden_size)
         self.attention = BahdanauAttention(hidden_size)
-        self.gru = torch.nn.GRU(2 * hidden_size, hidden_size, num_layers=num_decoder_layers, batch_first=True)
+        self.RNN = RNN(2 * hidden_size, hidden_size, batch_first=True)
         self.out = torch.nn.Linear(hidden_size, output_size)
         self.dropout = torch.nn.Dropout(dropout_p)
         self.max_length = max_length
@@ -157,12 +157,13 @@ class AttnDecoderRNN(torch.nn.Module):
 
     def forward_step(self, input_tensor, hidden, encoder_outputs):
         embedded =  self.dropout(self.embedding(input_tensor))
-
+        if type(hidden) == tuple:
+            hidden = hidden[0]
         query = hidden.permute(1, 0, 2)
         context, attn_weights = self.attention(query, encoder_outputs)
         input_gru = torch.cat((embedded, context), dim=2)
 
-        output, hidden = self.gru(input_gru, hidden)
+        output, hidden = self.RNN(input_gru, hidden)
         output = self.out(output)
 
         return output, hidden, attn_weights
